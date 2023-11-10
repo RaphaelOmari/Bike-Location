@@ -1,11 +1,13 @@
 import json
-from datetime import datetime
+import base64
 import requests
+from datetime import datetime, timedelta
 from geopy.distance import geodesic
+import io
+from PIL import Image
+from fpdf import FPDF
 
-# Retrived JSON data from 
-def get_bike_data():
-    url = 'https://example.com/bike_data.json'
+def get_bike_data(url):
     response = requests.get(url)
     if response.status_code == 200:
         return response.json()
@@ -13,50 +15,63 @@ def get_bike_data():
         print(f"Failed to fetch data. Status code: {response.status_code}")
         return None
 
-data = get_bike_data() #Stores the variable data as the JSON values from the API URL
+def calculate_duration(timestamp, duration_months):
+    current_time = datetime.now().timestamp()
+    duration_seconds = duration_months * 2592000  # Convert months to seconds
+    return current_time - timestamp <= duration_seconds
 
-if data:
-    def calculate_duration(timestamp, duration):
-        current_time = datetime.now().timestamp()
-        return current_time - timestamp <= duration
-
-    def find_stolen_bikes(location, duration):
-        location = location.lower()
-        duration_seconds = duration*2592000  # Convert months to seconds (24hours x 30days x 3600seconds)
-
-        stolen_bikes = []
-
-        for bike in data['bikes']:
-            if bike['status'] == 'stolen' and bike['stolen_location'].lower().find(location) != -1: #The condition "find(location) != -1" checks to see if the locatiopn is found within "bike['stolen_location']" is found or not
-                if bike['date_stolen'] and calculate_duration(bike['date_stolen'], duration_seconds):
-                    stolen_bikes.append(bike)
-
-        return stolen_bikes
-
-    def show_on_google_maps(coords):
-        lat, lon = coords
-        map_url = f"https://www.google.com/maps?q={lat},{lon}" #Displays the google maps image of the aquired co-ordinates
-        return map_url
-
-    def calculate_distance(coords1, coords2):
-        return geodesic(coords1, coords2).kilometers
+def filter_by_date(bikes_data, duration_months):
+    filtered_bikes = []
+    cutoff_date = datetime.now() - timedelta(days=duration_months*30)
+    cutoff_timestamp = int(cutoff_date.timestamp())
     
-    if __name__ == '__main__':
+    for bike in bikes_data['bikes']:
+        if bike['date_stolen'] and bike['date_stolen'] >= cutoff_timestamp:
+            filtered_bikes.append(bike)
+    
+    return {'bikes': filtered_bikes}
+
+def convert_images_to_base64(bikes):
+    for bike in bikes['bikes']:
+        if bike['large_img']:
+            bike['base64_img'] = 'base64_encoded_string_simulated'
+    return bikes
+
+def generate_pdf_with_images(bikes):
+    # Placeholder function for generating a PDF
+    return 'base64_encoded_pdf_simulated'
+
+def format_bike_info(bike):
+    bike_info = {
+        "Title": bike['title'],
+        "Stolen Location": bike['stolen_location'],
+        "Stolen Date": datetime.fromtimestamp(bike['date_stolen']).strftime('%Y-%m-%d %H:%M:%S') if bike['date_stolen'] else "Not Available",
+        "More Info URL": bike['url'],
+        "Google Maps URL": f"https://www.google.com/maps?q={bike['stolen_coordinates'][0]},{bike['stolen_coordinates'][1]}" if bike['stolen_coordinates'] else "Not Available",
+        "Image Base64": bike.get('base64_img', 'No image available')
+    }
+    return bike_info
+
+if __name__ == '__main__':
+    url = 'https://example.com/bike_data.json'  # Replace with the actual URL
+    data = get_bike_data(url)
+
+    if data:
         location = input("Enter a location: ")
         duration = int(input("Enter the duration in months: "))
 
-        stolen_bikes = find_stolen_bikes(location, duration)
+        filtered_bikes = filter_by_date(data, duration)
+        stolen_bikes_with_images = convert_images_to_base64(filtered_bikes)
+        base64_pdf = generate_pdf_with_images(stolen_bikes_with_images)
 
-        if len(stolen_bikes) == 0:
+        if len(stolen_bikes_with_images['bikes']) == 0:
             print("No stolen bikes found in the specified location within the given duration.")
         else:
-            print("Stolen bikes found in the specified location within the given duration:")
-            for bike in stolen_bikes:
-                print(f"Title: {bike['title']}")
-                print(f"Stolen Location: {bike['stolen_location']}")
-                print(f"Stolen Date: {datetime.fromtimestamp(bike['date_stolen']).strftime('%Y-%m-%d %H:%M:%S')}")
-                print(f"More Info: {bike['url']}")
-                print(f"Distance to Location: {calculate_distance(bike['stolen_coordinates'], (lat, lon))} km")
-                print(f"View on Google Maps: {show_on_google_maps(bike['stolen_coordinates'])}")
-                print("")
-                print("")
+            print("\nStolen bikes found in the specified location within the given duration:")
+            for bike in stolen_bikes_with_images['bikes']:
+                bike_info = format_bike_info(bike)
+                printable_info = "\n".join(f"{key}: {value}" for key, value in bike_info.items())
+                print(printable_info)
+                print("\n" + "-"*40 + "\n")
+
+            print(f"PDF with images in Base64 format: {base64_pdf}")
